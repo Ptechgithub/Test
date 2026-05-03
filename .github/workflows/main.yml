@@ -1,14 +1,14 @@
-name: Fetch Telegram Channel Messages (Web Scraping)
+name: Fetch Telegram Channel Messages (Multi‑Channel)
 
 on:
   workflow_dispatch:
     inputs:
-      channel:
-        description: '   (: example  @example)'
+      channels:
+        description: 'نام کانال(ها) (با کاما جدا کنید، با یا بدون @) مثل: my_channel,news,@channel3'
         required: true
         default: 'my_channel'
       limit:
-        description: '    ( )'
+        description: 'حداکثر تعداد پیام برای هر کانال (پیش‌فرض ۵۰)'
         required: false
         default: '50'
 
@@ -31,11 +31,11 @@ jobs:
 
       - name: Fetch messages and generate HTML
         env:
-          CHANNEL: ${{ github.event.inputs.channel }}
+          CHANNELS: ${{ github.event.inputs.channels }}
           LIMIT: ${{ github.event.inputs.limit }}
         run: |
           python - <<EOF
-          import os, re, time, html, requests
+          import os, re, time, html, requests, json
           from bs4 import BeautifulSoup
           from datetime import datetime
 
@@ -73,9 +73,9 @@ jobs:
                           dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                           date = dt.strftime('%Y-%m-%d %H:%M:%S')
                       except:
-                          date = ' '
+                          date = 'نامشخص'
                   else:
-                      date = ' '
+                      date = 'نامشخص'
                   messages.append({'text': text, 'date': date})
               return messages, soup
 
@@ -87,32 +87,55 @@ jobs:
                       return match.group(1)
               return None
 
+          def fetch_channel_messages(channel, limit):
+              """Returns (success, data) where data is list of messages or error string"""
+              try:
+                  channel_clean = clean_channel(channel)
+                  print(f"🔄 در حال دریافت پیام‌های @{channel_clean} ...")
+                  all_messages = []
+                  before = None
+                  retries = 0
+                  while len(all_messages) < limit and retries < 5:
+                      html_content = fetch_page(channel_clean, before)
+                      messages, soup = parse_messages(html_content)
+                      if not messages:
+                          break
+                      all_messages.extend(messages)
+                      before = get_next_before(soup)
+                      if not before:
+                          break
+                      time.sleep(1)
+                      retries += 1
+                  all_messages = all_messages[:limit]
+                  print(f"✅ {len(all_messages)} پیام از @{channel_clean} دریافت شد.")
+                  return True, all_messages
+              except Exception as e:
+                  error_msg = f"خطا در دریافت کانال {channel}: {str(e)}"
+                  print(f"❌ {error_msg}")
+                  return False, error_msg
+
           def main():
-              channel = clean_channel(os.environ['CHANNEL'])
+              channels_input = os.environ.get('CHANNELS', '')
+              if not channels_input:
+                  print("⚠️ هیچ کانالی وارد نشده است.")
+                  return
               limit = int(os.environ.get('LIMIT', 50))
-              print(f"   : https://t.me/s/{channel}")
-              all_messages = []
-              before = None
-              retries = 0
-              while len(all_messages) < limit and retries < 5:
-                  print(f"  (: {before})...")
-                  html_content = fetch_page(channel, before)
-                  messages, soup = parse_messages(html_content)
-                  if not messages:
-                      break
-                  all_messages.extend(messages)
-                  before = get_next_before(soup)
-                  if not before:
-                      break
-                  time.sleep(1)
-                  retries += 1
 
-              all_messages = all_messages[:limit]
-              print(f"{len(all_messages)}   .")
+              # پردازش لیست کانال‌ها
+              channel_list = [ch.strip() for ch in channels_input.split(',') if ch.strip()]
+              if not channel_list:
+                  print("⚠️ لیست کانال‌ها خالی است.")
+                  return
 
-              output_path = "telegram/channel_messages.html"
+              results = {}  # {channel_name: {'status': 'success'/'error', 'data': messages or error_msg}}
+              for ch in channel_list:
+                  success, data = fetch_channel_messages(ch, limit)
+                  results[ch] = {
+                      'status': 'success' if success else 'error',
+                      'data': data
+                  }
 
-              # CSS    (  )
+              # ---------- تولید HTML با قابلیت انتخاب کانال ----------
               css = """
               <style>
                   :root {
@@ -163,8 +186,33 @@ jobs:
                       gap: 10px;
                   }
                   h1::before {
-                      content: "";
+                      content: "📡";
                       font-size: 2rem;
+                  }
+                  .channel-selector {
+                      margin-top: 1rem;
+                      display: flex;
+                      align-items: center;
+                      gap: 1rem;
+                      flex-wrap: wrap;
+                  }
+                  .channel-selector label {
+                      font-weight: bold;
+                      color: var(--dark);
+                  }
+                  select {
+                      padding: 0.6rem 1rem;
+                      border-radius: 30px;
+                      border: 1px solid #ddd;
+                      background: white;
+                      font-size: 1rem;
+                      cursor: pointer;
+                      outline: none;
+                      transition: 0.2s;
+                      font-family: inherit;
+                  }
+                  select:hover {
+                      border-color: var(--primary);
                   }
                   .badge {
                       display: inline-block;
@@ -191,16 +239,6 @@ jobs:
                       box-shadow: 0 15px 30px rgba(0,0,0,0.1);
                       border-right-color: var(--primary);
                   }
-                  .message::before {
-                      content: "";
-                      position: absolute;
-                      top: 0;
-                      left: 0;
-                      width: 100%;
-                      height: 100%;
-                      background: radial-gradient(circle at top left, rgba(42,157,143,0.03) 0%, transparent 70%);
-                      pointer-events: none;
-                  }
                   .date {
                       color: var(--gray);
                       font-size: 0.8rem;
@@ -210,7 +248,7 @@ jobs:
                       gap: 8px;
                   }
                   .date::before {
-                      content: "";
+                      content: "🕒";
                       font-size: 0.9rem;
                   }
                   .text {
@@ -228,6 +266,13 @@ jobs:
                   .text a:hover {
                       color: var(--primary-dark);
                   }
+                  .error-message {
+                      background: #ffe0e0;
+                      border-right: 5px solid #e74c3c;
+                      padding: 1.2rem;
+                      border-radius: var(--border-radius);
+                      color: #c0392b;
+                  }
                   .footer {
                       text-align: center;
                       margin-top: 2rem;
@@ -237,61 +282,121 @@ jobs:
                       border-top: 1px solid rgba(0,0,0,0.05);
                   }
                   @media (max-width: 600px) {
-                      body {
-                          padding: 1rem;
-                      }
-                      .header {
-                          padding: 1rem;
-                      }
-                      h1 {
-                          font-size: 1.4rem;
-                      }
-                      .message {
-                          padding: 1rem;
-                      }
+                      body { padding: 1rem; }
+                      .header { padding: 1rem; }
+                      h1 { font-size: 1.4rem; }
+                      .message { padding: 1rem; }
                   }
               </style>
               """
+
+              # تبدیل داده‌های کانال‌ها به JSON برای استفاده در جاوااسکریپت
+              channels_data = {}
+              for ch, info in results.items():
+                  if info['status'] == 'success':
+                      # messages list
+                      channels_data[ch] = {'status': 'success', 'messages': info['data']}
+                  else:
+                      channels_data[ch] = {'status': 'error', 'error': info['data']}
+
+              json_data = json.dumps(channels_data, ensure_ascii=False)
 
               html_output = f"""<!DOCTYPE html>
               <html lang="fa">
               <head>
                   <meta charset="UTF-8">
                   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-                  <title>  @{channel}</title>
+                  <title>نمایشگر پیام‌های تلگرام</title>
                   {css}
               </head>
               <body>
               <div class="container">
                   <div class="header">
-                      <h1>  @{channel}</h1>
-                      <div class="badge">  : {len(all_messages)}</div>
-                  </div>
-                  <div class="messages">
-              """
-              for msg in all_messages:
-                  safe_text = html.escape(msg['text']).replace('\n', '<br>')
-                  #  
-                  safe_text = re.sub(r'(https?://[^\s]+)', r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', safe_text)
-                  html_output += f"""
-                      <div class="message">
-                          <div class="date">{msg['date']}</div>
-                          <div class="text">{safe_text}</div>
+                      <h1>📢 پیام‌های کانال‌های تلگرام</h1>
+                      <div class="channel-selector">
+                          <label for="channelSelect">انتخاب کانال:</label>
+                          <select id="channelSelect">
+                              <option value="">-- لطفاً یک کانال را انتخاب کنید --</option>
+                              {"".join(f'<option value="{html.escape(ch)}">{html.escape(ch)}</option>' for ch in channels_data.keys())}
+                          </select>
                       </div>
-                  """
-              html_output += f"""
+                      <div class="badge" id="messageCount"></div>
+                  </div>
+                  <div id="messagesContainer" class="messages">
+                      <!-- پیام‌ها به صورت داینامیک در اینجا بارگذاری می‌شوند -->
                   </div>
                   <div class="footer">
-                         GitHub Actions � {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                      تولید شده توسط GitHub Actions • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                   </div>
               </div>
+              <script>
+                  const channelData = {json_data};
+
+                  function renderMessages(channelName) {{
+                      const container = document.getElementById('messagesContainer');
+                      const countBadge = document.getElementById('messageCount');
+                      if (!channelName || !channelData[channelName]) {{
+                          container.innerHTML = '<div class="error-message">⚠️ لطفاً یک کانال معتبر انتخاب کنید.</div>';
+                          countBadge.textContent = '';
+                          return;
+                      }}
+                      const data = channelData[channelName];
+                      if (data.status === 'error') {{
+                          container.innerHTML = `<div class="error-message">❌ ${{escapeHtml(data.error)}}</div>`;
+                          countBadge.textContent = 'خطا در دریافت';
+                          return;
+                      }}
+                      const messages = data.messages;
+                      if (!messages.length) {{
+                          container.innerHTML = '<div class="error-message">⚠️ هیچ پیامی برای این کانال یافت نشد.</div>';
+                          countBadge.textContent = '۰ پیام';
+                          return;
+                      }}
+                      countBadge.textContent = `📨 ${{messages.length}} پیام`;
+                      let html = '';
+                      for (const msg of messages) {{
+                          let text = escapeHtml(msg.text).replace(/\\n/g, '<br>');
+                          // لینک‌سازی خودکار
+                          text = text.replace(/(https?:\\/\\/[^\\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+                          html += `
+                              <div class="message">
+                                  <div class="date">🕒 ${{escapeHtml(msg.date)}}</div>
+                                  <div class="text">${{text}}</div>
+                              </div>
+                          `;
+                      }}
+                      container.innerHTML = html;
+                  }}
+
+                  function escapeHtml(str) {{
+                      return str.replace(/[&<>]/g, function(m) {{
+                          if (m === '&') return '&amp;';
+                          if (m === '<') return '&lt;';
+                          if (m === '>') return '&gt;';
+                          return m;
+                      }}).replace(/[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]/g, function(c) {{
+                          return c;
+                      }});
+                  }}
+
+                  const selectEl = document.getElementById('channelSelect');
+                  selectEl.addEventListener('change', (e) => {{
+                      renderMessages(e.target.value);
+                  }});
+                  // در صورت وجود کانال پیش‌فرض، اولین کانال را نمایش بده
+                  if (selectEl.options.length > 1) {{
+                      selectEl.selectedIndex = 1;
+                      renderMessages(selectEl.value);
+                  }}
+              </script>
               </body>
               </html>
               """
 
+              output_path = "telegram/channels_messages.html"
               with open(output_path, "w", encoding="utf-8") as f:
                   f.write(html_output)
-              print(f" {output_path}       .")
+              print(f"✅ فایل HTML در {output_path} ذخیره شد.")
 
           if __name__ == "__main__":
               main()
@@ -300,7 +405,7 @@ jobs:
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Update channel messages with colorful professional style"
+          commit_message: "Update multi-channel messages with interactive HTML selector"
           file_pattern: "telegram/*.html"
           commit_user_name: "GitHub Actions"
           commit_user_email: "actions@github.com"

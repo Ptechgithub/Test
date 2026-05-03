@@ -1,0 +1,108 @@
+name: Fetch Telegram Channel Messages
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'نام کاربری کانال تلگرام (مثلاً @example) یا آیدی عددی'
+        required: true
+        default: '@my_channel'
+      api_id:
+        description: 'api_id از my.telegram.org (در صورت نداشتن، از secrets استفاده می‌شود)'
+        required: false
+      api_hash:
+        description: 'api_hash از my.telegram.org (در صورت نداشتن، از secrets استفاده می‌شود)'
+        required: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Telethon
+        run: pip install telethon
+
+      - name: Fetch messages and generate HTML
+        env:
+          # اگر input خالی بود، از secrets پر می‌شوند (قبلاً در repo تنظیم کنید)
+          API_ID: ${{ github.event.inputs.api_id || secrets.TELEGRAM_API_ID }}
+          API_HASH: ${{ github.event.inputs.api_hash || secrets.TELEGRAM_API_HASH }}
+          CHANNEL: ${{ github.event.inputs.channel }}
+        run: |
+          python - <<EOF
+          import os, asyncio, html
+          from datetime import datetime
+          from telethon import TelegramClient
+
+          API_ID = int(os.environ['API_ID'])
+          API_HASH = os.environ['API_HASH']
+          CHANNEL = os.environ['CHANNEL']
+
+          async def main():
+              client = TelegramClient('session', API_ID, API_HASH)
+              await client.start()
+              # دریافت آخرین ۵۰ پیام (تعداد قابل تغییر است)
+              messages = []
+              async for msg in client.iter_messages(CHANNEL, limit=50):
+                  if msg.text:
+                      messages.append({
+                          'date': msg.date.strftime('%Y-%m-%d %H:%M:%S'),
+                          'text': html.escape(msg.text)
+                      })
+              await client.disconnect()
+
+              # تولید HTML زیبا
+              html_content = f"""<!DOCTYPE html>
+              <html lang="fa">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>پیام‌های کانال {CHANNEL}</title>
+                  <style>
+                      body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; text-align: right; margin: 20px; background: #f0f2f5; }}
+                      .container {{ max-width: 800px; margin: auto; background: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); padding: 20px; }}
+                      h1 {{ color: #1e6f5c; border-bottom: 2px solid #1e6f5c; padding-bottom: 10px; }}
+                      .message {{ border-bottom: 1px solid #ddd; padding: 15px 0; }}
+                      .date {{ color: #888; font-size: 0.85em; margin-bottom: 5px; }}
+                      .text {{ font-size: 1em; line-height: 1.5; white-space: pre-wrap; }}
+                      .footer {{ text-align: center; margin-top: 20px; font-size: 0.8em; color: #aaa; }}
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <h1>📢 آخرین پیام‌های کانال {CHANNEL}</h1>
+                      <div id="messages">
+              """
+              for m in messages:
+                  html_content += f"""
+                          <div class="message">
+                              <div class="date">📅 {m['date']}</div>
+                              <div class="text">{m['text']}</div>
+                          </div>
+                  """
+              html_content += f"""
+                      </div>
+                      <div class="footer">تولید شده در {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | تعداد پیام‌ها: {len(messages)}</div>
+                  </div>
+              </body>
+              </html>
+              """
+              with open("channel_messages.html", "w", encoding="utf-8") as f:
+                  f.write(html_content)
+              print(f"✅ HTML ذخیره شد. تعداد پیام‌ها: {len(messages)}")
+
+          asyncio.run(main())
+          EOF
+
+      - name: Upload HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram_messages
+          path: channel_messages.html

@@ -112,142 +112,111 @@ jobs:
 
               output_path = "telegram/channel_messages.html"
 
-              # CSS حرفه‌ای و رنگی
+              # استایل شبیه به تلگرام (Telegram Web / t.me)
               css = """
               <style>
-                  :root {
-                      --primary: #2A9D8F;
-                      --primary-dark: #21867a;
-                      --secondary: #E9C46A;
-                      --dark: #264653;
-                      --light: #F8F9FA;
-                      --gray: #6c757d;
-                      --border-radius: 20px;
-                      --box-shadow: 0 10px 25px rgba(0,0,0,0.05), 0 5px 10px rgba(0,0,0,0.03);
-                  }
                   * {
                       margin: 0;
                       padding: 0;
                       box-sizing: border-box;
                   }
                   body {
-                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                      background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+                      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                      background-color: #eef2f5;
                       direction: rtl;
                       text-align: right;
-                      padding: 2rem;
-                      min-height: 100vh;
+                      padding: 20px 16px;
+                      color: #222;
                   }
-                  .container {
-                      max-width: 900px;
+                  .telegram-container {
+                      max-width: 700px;
                       margin: 0 auto;
-                  }
-                  .header {
-                      background: white;
-                      border-radius: var(--border-radius);
-                      padding: 1.5rem 2rem;
-                      margin-bottom: 2rem;
-                      box-shadow: var(--box-shadow);
-                      border-right: 8px solid var(--primary);
-                      transition: transform 0.2s;
-                  }
-                  .header:hover {
-                      transform: translateY(-3px);
-                  }
-                  h1 {
-                      color: var(--dark);
-                      font-size: 1.8rem;
-                      margin-bottom: 0.5rem;
-                      display: flex;
-                      align-items: center;
-                      gap: 10px;
-                  }
-                  h1::before {
-                      content: "📡";
-                      font-size: 2rem;
-                  }
-                  .badge {
-                      display: inline-block;
-                      background: var(--primary);
-                      color: white;
-                      padding: 0.3rem 1rem;
-                      border-radius: 30px;
-                      font-size: 0.85rem;
-                      margin-top: 0.5rem;
-                  }
-                  .message {
-                      background: white;
-                      border-radius: var(--border-radius);
-                      padding: 1.2rem 1.5rem;
-                      margin-bottom: 1.2rem;
-                      box-shadow: var(--box-shadow);
-                      transition: all 0.2s ease;
-                      border-right: 5px solid var(--secondary);
-                      position: relative;
+                      background: #ffffff;
+                      border-radius: 16px;
+                      box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.08);
                       overflow: hidden;
                   }
-                  .message:hover {
-                      transform: translateX(-5px);
-                      box-shadow: 0 15px 30px rgba(0,0,0,0.1);
-                      border-right-color: var(--primary);
+                  .channel-header {
+                      background-color: #ffffff;
+                      border-bottom: 1px solid #dbdbdb;
+                      padding: 18px 20px;
+                      text-align: center;
                   }
-                  .message::before {
-                      content: "";
-                      position: absolute;
-                      top: 0;
-                      left: 0;
-                      width: 100%;
-                      height: 100%;
-                      background: radial-gradient(circle at top left, rgba(42,157,143,0.03) 0%, transparent 70%);
-                      pointer-events: none;
-                  }
-                  .date {
-                      color: var(--gray);
-                      font-size: 0.8rem;
-                      margin-bottom: 0.8rem;
+                  .channel-header h1 {
+                      font-size: 1.5rem;
+                      font-weight: 500;
+                      color: #1f2b38;
+                      margin: 0 0 4px;
                       display: flex;
                       align-items: center;
+                      justify-content: center;
                       gap: 8px;
                   }
-                  .date::before {
-                      content: "🕒";
-                      font-size: 0.9rem;
+                  .channel-header h1::before {
+                      content: "📢";
+                      font-size: 1.6rem;
                   }
-                  .text {
-                      color: var(--dark);
-                      line-height: 1.6;
-                      font-size: 1rem;
+                  .channel-header .badge {
+                      font-size: 0.8rem;
+                      color: #6f7a86;
+                      background: #f0f2f4;
+                      display: inline-block;
+                      padding: 4px 12px;
+                      border-radius: 20px;
+                      margin-top: 8px;
+                  }
+                  .message-list {
+                      padding: 8px 0;
+                  }
+                  .message {
+                      padding: 12px 20px;
+                      border-bottom: 1px solid #f0f0f0;
+                      transition: background 0.1s ease;
+                  }
+                  .message:hover {
+                      background-color: #fafbfc;
+                  }
+                  .message-date {
+                      font-size: 0.7rem;
+                      color: #8d98a3;
+                      margin-bottom: 6px;
+                      letter-spacing: -0.2px;
+                  }
+                  .message-text {
+                      font-size: 0.95rem;
+                      line-height: 1.5;
+                      color: #1c2c3c;
+                      word-wrap: break-word;
                       white-space: pre-wrap;
-                      word-break: break-word;
                   }
-                  .text a {
-                      color: var(--primary);
+                  .message-text a {
+                      color: #2999e0;
                       text-decoration: none;
-                      border-bottom: 1px dashed var(--primary);
+                      border-bottom: 1px solid #c9e9ff;
                   }
-                  .text a:hover {
-                      color: var(--primary-dark);
+                  .message-text a:hover {
+                      text-decoration: underline;
                   }
                   .footer {
+                      background: #f9fafa;
+                      padding: 14px 20px;
                       text-align: center;
-                      margin-top: 2rem;
-                      padding: 1rem;
-                      color: var(--gray);
-                      font-size: 0.8rem;
-                      border-top: 1px solid rgba(0,0,0,0.05);
+                      font-size: 0.7rem;
+                      color: #8e9aa7;
+                      border-top: 1px solid #ecf0f3;
                   }
-                  @media (max-width: 600px) {
+                  @media (max-width: 500px) {
                       body {
-                          padding: 1rem;
+                          padding: 10px 8px;
                       }
-                      .header {
-                          padding: 1rem;
+                      .telegram-container {
+                          border-radius: 12px;
                       }
-                      h1 {
-                          font-size: 1.4rem;
+                      .channel-header {
+                          padding: 14px 16px;
                       }
                       .message {
-                          padding: 1rem;
+                          padding: 10px 16px;
                       }
                   }
               </style>
@@ -257,33 +226,32 @@ jobs:
               <html lang="fa">
               <head>
                   <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-                  <title>پیام‌های کانال @{channel}</title>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>پیام‌های کانال @{channel} · تلگرام</title>
                   {css}
               </head>
               <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>پیام‌های کانال @{channel}</h1>
-                      <div class="badge">📊 تعداد پیام‌ها: {len(all_messages)}</div>
+              <div class="telegram-container">
+                  <div class="channel-header">
+                      <h1>کانال @{channel}</h1>
+                      <div class="badge">{len(all_messages)} پیام</div>
                   </div>
-                  <div class="messages">
+                  <div class="message-list">
               """
               for msg in all_messages:
                   safe_text = html.escape(msg['text']).replace('\n', '<br>')
-                  # تبدیل لینک‌های متنی به لینک فعال (اختیاری)
-                  import re as regex
-                  safe_text = regex.sub(r'(https?://[^\s]+)', r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', safe_text)
+                  # تبدیل خودکار لینک‌ها
+                  safe_text = re.sub(r'(https?://[^\s]+)', r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', safe_text)
                   html_output += f"""
                       <div class="message">
-                          <div class="date">{msg['date']}</div>
-                          <div class="text">{safe_text}</div>
+                          <div class="message-date">{msg['date']}</div>
+                          <div class="message-text">{safe_text}</div>
                       </div>
                   """
               html_output += f"""
                   </div>
                   <div class="footer">
-                      تولید شده توسط GitHub Actions • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                      دریافت شده با GitHub Actions • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                   </div>
               </div>
               </body>
@@ -292,7 +260,7 @@ jobs:
 
               with open(output_path, "w", encoding="utf-8") as f:
                   f.write(html_output)
-              print(f"فایل {output_path} با استایل حرفه‌ای ساخته شد.")
+              print(f"فایل {output_path} با استایل تلگرامی ساخته شد.")
 
           if __name__ == "__main__":
               main()
@@ -301,7 +269,7 @@ jobs:
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Update Telegram channel messages with professional CSS"
+          commit_message: "Update channel messages with Telegram-like style"
           file_pattern: "telegram/*.html"
           commit_user_name: "GitHub Actions"
           commit_user_email: "actions@github.com"

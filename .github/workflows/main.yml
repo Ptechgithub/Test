@@ -7,6 +7,10 @@ on:
         description: 'نام کاربری کانال تلگرام (مثلاً @example) یا آیدی عددی'
         required: true
         default: '@my_channel'
+      limit:
+        description: 'تعداد پیام‌های مورد نظر (حداکثر ۱۰۰۰)'
+        required: false
+        default: '50'
       api_id:
         description: 'api_id از my.telegram.org (در صورت نداشتن، از secrets استفاده می‌شود)'
         required: false
@@ -37,40 +41,89 @@ jobs:
           API_ID: ${{ github.event.inputs.api_id || secrets.TELEGRAM_API_ID }}
           API_HASH: ${{ github.event.inputs.api_hash || secrets.TELEGRAM_API_HASH }}
           CHANNEL: ${{ github.event.inputs.channel }}
+          LIMIT: ${{ github.event.inputs.limit }}
         run: |
           python - <<EOF
-          import os, asyncio, html
+          import os
+          import asyncio
+          import html
           from datetime import datetime
-          from telethon import TelegramClient
+          from telethon import TelegramClient, errors
           from telethon.sessions import StringSession
 
           async def main():
-              string_session = os.environ['TELEGRAM_STRING_SESSION']
-              api_id = int(os.environ['API_ID'])
-              api_hash = os.environ['API_HASH']
-              channel = os.environ['CHANNEL']
+              # دریافت متغیرهای محیطی
+              string_session = os.environ.get('TELEGRAM_STRING_SESSION')
+              api_id_str = os.environ.get('API_ID')
+              api_hash = os.environ.get('API_HASH')
+              channel = os.environ.get('CHANNEL')
+              limit = int(os.environ.get('LIMIT', 50))
 
-              # 关键：使用 StringSession
+              # بررسی وجود موارد ضروری
+              if not string_session:
+                  raise ValueError("TELEGRAM_STRING_SESSION در secrets تعریف نشده است.")
+              if not api_id_str or not api_hash:
+                  raise ValueError("API_ID و API_HASH باید از طریق input یا secrets ارائه شوند.")
+              
+              api_id = int(api_id_str)
+
+              # اتصال به کلاینت تلگرام
               client = TelegramClient(StringSession(string_session), api_id, api_hash)
               await client.start()
               
-              # 获取消息
+              print(f"در حال دریافت تا {limit} پیام از کانال {channel}...")
               messages = []
-              async for msg in client.iter_messages(channel, limit=50):
-                  if msg.text:
-                      messages.append({
-                          'date': msg.date.strftime('%Y-%m-%d %H:%M:%S'),
-                          'text': html.escape(msg.text)
-                      })
+              try:
+                  async for msg in client.iter_messages(channel, limit=limit):
+                      if msg.text and msg.text.strip():
+                          messages.append({
+                              'date': msg.date.strftime('%Y-%m-%d %H:%M:%S'),
+                              'text': html.escape(msg.text).replace('\n', '<br>')
+                          })
+              except errors.RPCError as e:
+                  print(f"خطای تلگرام: {e}")
+                  raise
+              finally:
+                  await client.disconnect()
               
-              await client.disconnect()  # 确保断开连接
-
-              # ... (HTML生成部分代码保持不变)
-              # ... 
+              print(f"{len(messages)} پیام دریافت شد.")
+              
+              # ساخت محتوای HTML
+              html_content = f"""<!DOCTYPE html>
+              <html>
+              <head>
+                  <meta charset="UTF-8">
+                  <title>پیام‌های کانال {channel}</title>
+                  <style>
+                      body {{ font-family: Arial, sans-serif; direction: rtl; text-align: right; margin: 20px; }}
+                      .message {{ border: 1px solid #ddd; margin: 10px 0; padding: 10px; border-radius: 5px; }}
+                      .date {{ color: gray; font-size: 0.8em; }}
+                      .text {{ margin-top: 5px; }}
+                  </style>
+              </head>
+              <body>
+                  <h1>پیام‌های کانال {channel}</h1>
+                  <p>تعداد پیام‌ها: {len(messages)}</p>
+              """
+              for msg in messages:
+                  html_content += f"""
+                  <div class="message">
+                      <div class="date">{msg['date']}</div>
+                      <div class="text">{msg['text']}</div>
+                  </div>
+                  """
+              html_content += """
+              </body>
+              </html>
+              """
+              
               with open("channel_messages.html", "w", encoding="utf-8") as f:
                   f.write(html_content)
+              
+              print("فایل channel_messages.html با موفقیت ساخته شد.")
 
-          asyncio.run(main())
+          if __name__ == "__main__":
+              asyncio.run(main())
           EOF
 
       - name: Upload HTML artifact

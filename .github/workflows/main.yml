@@ -80,9 +80,19 @@ jobs:
               return messages, soup
 
           def get_next_before(soup):
+              # روش اول: جستجوی لینک "Previous"
               prev_link = soup.find('a', class_='tgme_widget_message_bubble_previous')
+              if not prev_link:
+                  # روش دوم: جستجوی هر لینکی که شامل "?before=" باشد
+                  prev_link = soup.find('a', href=re.compile(r'[?&]before=\d+'))
               if prev_link and prev_link.has_attr('href'):
                   match = re.search(r'[?&]before=(\d+)', prev_link['href'])
+                  if match:
+                      return match.group(1)
+              # روش سوم: جستجوی تگ link با rel="prev" (بعضی قالب‌ها)
+              link_tag = soup.find('link', rel='prev')
+              if link_tag and link_tag.has_attr('href'):
+                  match = re.search(r'[?&]before=(\d+)', link_tag['href'])
                   if match:
                       return match.group(1)
               return None
@@ -93,20 +103,36 @@ jobs:
                   print(f"🔄 در حال دریافت پیام‌های @{channel_clean} ...")
                   all_messages = []
                   before = None
-                  retries = 0
-                  while len(all_messages) < limit and retries < 5:
+                  max_pages = 100  # جلوگیری از حلقه بی‌نهایت
+                  pages_fetched = 0
+                  
+                  while len(all_messages) < limit and pages_fetched < max_pages:
+                      print(f"   دریافت صفحه {pages_fetched+1} ... (before={before})")
                       html_content = fetch_page(channel_clean, before)
                       messages, soup = parse_messages(html_content)
+                      
                       if not messages:
+                          print("   ⚠️ پیامی یافت نشد، توقف صفحه‌بندی.")
                           break
-                      all_messages.extend(messages)
+                      
+                      # جلوگیری از اضافه کردن پیام‌های تکراری (در صورت وجود)
+                      new_messages = [msg for msg in messages if msg not in all_messages]
+                      if not new_messages:
+                          print("   🔁 پیام تکراری، توقف.")
+                          break
+                      all_messages.extend(new_messages)
+                      print(f"   ✅ {len(new_messages)} پیام جدید، مجموع: {len(all_messages)}")
+                      
                       before = get_next_before(soup)
                       if not before:
+                          print("   🏁 به انتهای آرشیو رسیدیم.")
                           break
-                      time.sleep(1)
-                      retries += 1
+                      
+                      pages_fetched += 1
+                      time.sleep(1)  # احترام به سرور
+                  
                   all_messages = all_messages[:limit]
-                  print(f"✅ {len(all_messages)} پیام از @{channel_clean} دریافت شد.")
+                  print(f"✅ دریافت نهایی: {len(all_messages)} پیام از @{channel_clean}")
                   return True, all_messages
               except Exception as e:
                   error_msg = f"خطا در دریافت کانال {channel}: {str(e)}"
@@ -130,6 +156,7 @@ jobs:
                   success, data = fetch_channel_messages(ch, limit)
                   results[ch] = {'status': 'success' if success else 'error', 'data': data}
 
+              # ---------------- تولید HTML (با همان استایل زیبای قبلی) ----------------
               css = """
               <style>
                   :root {
@@ -372,7 +399,7 @@ jobs:
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Update multi-channel messages with interactive HTML selector"
+          commit_message: "Fix pagination to fetch more than 20 messages"
           file_pattern: "telegram/*.html"
           commit_user_name: "GitHub Actions"
           commit_user_email: "actions@github.com"

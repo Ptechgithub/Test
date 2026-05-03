@@ -1,22 +1,16 @@
-name: Fetch Telegram Channel Messages
+name: Fetch Telegram Channel Messages (Web Scraping)
 
 on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'نام کاربری کانال تلگرام (مثلاً @example) یا آیدی عددی'
+        description: 'نام کاربری کانال (مثال: example یا @example)'
         required: true
-        default: '@my_channel'
+        default: 'my_channel'
       limit:
-        description: 'تعداد پیام‌های مورد نظر (حداکثر ۱۰۰۰)'
+        description: 'تعداد پیام‌های مورد نظر (حداکثر ۲۰۰)'
         required: false
         default: '50'
-      api_id:
-        description: 'api_id از my.telegram.org (در صورت نداشتن، از secrets استفاده می‌شود)'
-        required: false
-      api_hash:
-        description: 'api_hash از my.telegram.org (در صورت نداشتن، از secrets استفاده می‌شود)'
-        required: false
 
 jobs:
   fetch:
@@ -33,97 +27,124 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install telethon
+          pip install requests beautifulsoup4
 
       - name: Fetch messages and generate HTML
         env:
-          TELEGRAM_STRING_SESSION: ${{ secrets.TELEGRAM_STRING_SESSION }}
-          API_ID: ${{ github.event.inputs.api_id || secrets.TELEGRAM_API_ID }}
-          API_HASH: ${{ github.event.inputs.api_hash || secrets.TELEGRAM_API_HASH }}
           CHANNEL: ${{ github.event.inputs.channel }}
           LIMIT: ${{ github.event.inputs.limit }}
         run: |
           python - <<EOF
-          import os
-          import asyncio
-          import html
+          import os, re, time, html, requests
+          from bs4 import BeautifulSoup
           from datetime import datetime
-          from telethon import TelegramClient, errors
-          from telethon.sessions import StringSession
 
-          async def main():
-              # دریافت متغیرهای محیطی
-              string_session = os.environ.get('TELEGRAM_STRING_SESSION')
-              api_id_str = os.environ.get('API_ID')
-              api_hash = os.environ.get('API_HASH')
-              channel = os.environ.get('CHANNEL')
-              limit = int(os.environ.get('LIMIT', 50))
+          def clean_channel(ch):
+              ch = ch.strip()
+              if ch.startswith('@'):
+                  ch = ch[1:]
+              return ch
 
-              # بررسی وجود موارد ضروری
-              if not string_session:
-                  raise ValueError("TELEGRAM_STRING_SESSION در secrets تعریف نشده است.")
-              if not api_id_str or not api_hash:
-                  raise ValueError("API_ID و API_HASH باید از طریق input یا secrets ارائه شوند.")
-              
-              api_id = int(api_id_str)
+          def fetch_page(channel, before=None):
+              url = f"https://t.me/s/{channel}"
+              if before:
+                  url += f"?before={before}"
+              headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+              resp = requests.get(url, headers=headers, timeout=10)
+              resp.raise_for_status()
+              return resp.text
 
-              # اتصال به کلاینت تلگرام
-              client = TelegramClient(StringSession(string_session), api_id, api_hash)
-              await client.start()
-              
-              print(f"در حال دریافت تا {limit} پیام از کانال {channel}...")
+          def parse_messages(html_content):
+              soup = BeautifulSoup(html_content, 'html.parser')
               messages = []
-              try:
-                  async for msg in client.iter_messages(channel, limit=limit):
-                      if msg.text and msg.text.strip():
-                          messages.append({
-                              'date': msg.date.strftime('%Y-%m-%d %H:%M:%S'),
-                              'text': html.escape(msg.text).replace('\n', '<br>')
-                          })
-              except errors.RPCError as e:
-                  print(f"خطای تلگرام: {e}")
-                  raise
-              finally:
-                  await client.disconnect()
-              
-              print(f"{len(messages)} پیام دریافت شد.")
-              
-              # ساخت محتوای HTML
-              html_content = f"""<!DOCTYPE html>
+              for msg_div in soup.find_all('div', class_='tgme_widget_message'):
+                  # استخراج متن
+                  text_elem = msg_div.find('div', class_='tgme_widget_message_text')
+                  if not text_elem:
+                      continue
+                  text = text_elem.get_text(separator='\n').strip()
+                  if not text:
+                      continue
+                  # تاریخ
+                  date_elem = msg_div.find('time', class_='time')
+                  if date_elem and date_elem.has_attr('datetime'):
+                      date_str = date_elem['datetime']  # ISO format
+                      try:
+                          dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                          date = dt.strftime('%Y-%m-%d %H:%M:%S')
+                      except:
+                          date = 'تاریخ نامشخص'
+                  else:
+                      date = 'تاریخ نامشخص'
+                  messages.append({'text': text, 'date': date})
+              return messages, soup
+
+          def get_next_before(soup):
+              prev_link = soup.find('a', class_='tgme_widget_message_bubble_previous')
+              if prev_link and prev_link.has_attr('href'):
+                  # href like "?before=12345"
+                  match = re.search(r'[?&]before=(\d+)', prev_link['href'])
+                  if match:
+                      return match.group(1)
+              return None
+
+          def main():
+              channel = clean_channel(os.environ['CHANNEL'])
+              limit = int(os.environ.get('LIMIT', 50))
+              print(f"دریافت پیام‌های کانال عمومی: https://t.me/s/{channel}")
+              all_messages = []
+              before = None
+              retries = 0
+              while len(all_messages) < limit and retries < 5:
+                  print(f"دریافت صفحه (قبل: {before})...")
+                  html_content = fetch_page(channel, before)
+                  messages, soup = parse_messages(html_content)
+                  if not messages:
+                      break
+                  all_messages.extend(messages)
+                  before = get_next_before(soup)
+                  if not before:
+                      break
+                  time.sleep(1)  # احترام به سرور
+                  retries += 1
+
+              # محدود کردن به تعداد درخواستی
+              all_messages = all_messages[:limit]
+              print(f"{len(all_messages)} پیام دریافت شد.")
+
+              # ساخت HTML
+              html_output = f"""<!DOCTYPE html>
               <html>
               <head>
                   <meta charset="UTF-8">
                   <title>پیام‌های کانال {channel}</title>
                   <style>
-                      body {{ font-family: Arial, sans-serif; direction: rtl; text-align: right; margin: 20px; }}
-                      .message {{ border: 1px solid #ddd; margin: 10px 0; padding: 10px; border-radius: 5px; }}
-                      .date {{ color: gray; font-size: 0.8em; }}
-                      .text {{ margin-top: 5px; }}
+                      body {{ font-family: Tahoma, sans-serif; direction: rtl; text-align: right; margin: 20px; }}
+                      .message {{ border: 1px solid #ccc; margin: 10px 0; padding: 10px; border-radius: 8px; }}
+                      .date {{ color: #666; font-size: 0.8em; }}
+                      .text {{ margin-top: 5px; white-space: pre-wrap; }}
                   </style>
               </head>
               <body>
-                  <h1>پیام‌های کانال {channel}</h1>
-                  <p>تعداد پیام‌ها: {len(messages)}</p>
+                  <h1>پیام‌های کانال @{channel}</h1>
+                  <p>تعداد پیام‌ها: {len(all_messages)}</p>
               """
-              for msg in messages:
-                  html_content += f"""
+              for msg in all_messages:
+                  safe_text = html.escape(msg['text']).replace('\n', '<br>')
+                  html_output += f"""
                   <div class="message">
                       <div class="date">{msg['date']}</div>
-                      <div class="text">{msg['text']}</div>
+                      <div class="text">{safe_text}</div>
                   </div>
                   """
-              html_content += """
-              </body>
-              </html>
-              """
-              
+              html_output += "</body></html>"
+
               with open("channel_messages.html", "w", encoding="utf-8") as f:
-                  f.write(html_content)
-              
-              print("فایل channel_messages.html با موفقیت ساخته شد.")
+                  f.write(html_output)
+              print("فایل channel_messages.html ساخته شد.")
 
           if __name__ == "__main__":
-              asyncio.run(main())
+              main()
           EOF
 
       - name: Upload HTML artifact

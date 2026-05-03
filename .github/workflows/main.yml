@@ -39,7 +39,6 @@ jobs:
           from bs4 import BeautifulSoup
           from datetime import datetime
 
-          # ایجاد دایرکتوری telegram در صورت نبودن
           os.makedirs("telegram", exist_ok=True)
 
           def clean_channel(ch):
@@ -111,9 +110,7 @@ jobs:
               all_messages = all_messages[:limit]
               print(f"{len(all_messages)} پیام دریافت شد.")
 
-              # مسیر ذخیره در دایرکتوری telegram
               output_path = "telegram/channel_messages.html"
-
               html_output = f"""<!DOCTYPE html>
               <html>
               <head>
@@ -148,8 +145,10 @@ jobs:
               main()
           EOF
 
-      - name: Upload HTML artifact
-        uses: actions/upload-artifact@v4
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          name: telegram_messages
-          path: telegram/channel_messages.html
+          commit_message: "Update Telegram channel messages"
+          file_pattern: "telegram/*.html"
+          commit_user_name: "GitHub Actions"
+          commit_user_email: "actions@github.com"

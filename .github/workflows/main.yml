@@ -34,7 +34,7 @@ jobs:
           CHANNELS: ${{ github.event.inputs.channels }}
           LIMIT: ${{ github.event.inputs.limit }}
         run: |
-          python - <<'EOL'
+          cat > /tmp/fetch_telegram.py << "SCRIPT_END"
           import os, re, time, html, requests, json
           from bs4 import BeautifulSoup
           from datetime import datetime
@@ -130,7 +130,6 @@ jobs:
                   success, data = fetch_channel_messages(ch, limit)
                   results[ch] = {'status': 'success' if success else 'error', 'data': data}
 
-              # CSS (بدون تغییر)
               css = """
               <style>
                   :root {
@@ -272,7 +271,6 @@ jobs:
 
               json_data = json.dumps(channels_data, ensure_ascii=False)
 
-              # جاوااسکریپت بدون هیچ ${{...}} یا backtick با متغیر
               js_code = f"""
                   const channelData = {json_data};
 
@@ -368,7 +366,8 @@ jobs:
 
           if __name__ == "__main__":
               main()
-          EOL
+          SCRIPT_END
+          python3 /tmp/fetch_telegram.py
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5

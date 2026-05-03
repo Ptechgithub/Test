@@ -34,7 +34,7 @@ jobs:
           CHANNELS: ${{ github.event.inputs.channels }}
           LIMIT: ${{ github.event.inputs.limit }}
         run: |
-          python - <<EOF
+          python - <<'EOF'
           import os, re, time, html, requests, json
           from bs4 import BeautifulSoup
           from datetime import datetime
@@ -121,19 +121,15 @@ jobs:
                   return
               limit = int(os.environ.get('LIMIT', 50))
 
-              # پردازش لیست کانال‌ها
               channel_list = [ch.strip() for ch in channels_input.split(',') if ch.strip()]
               if not channel_list:
                   print("⚠️ لیست کانال‌ها خالی است.")
                   return
 
-              results = {}  # {channel_name: {'status': 'success'/'error', 'data': messages or error_msg}}
+              results = {}
               for ch in channel_list:
                   success, data = fetch_channel_messages(ch, limit)
-                  results[ch] = {
-                      'status': 'success' if success else 'error',
-                      'data': data
-                  }
+                  results[ch] = {'status': 'success' if success else 'error', 'data': data}
 
               # ---------- تولید HTML با قابلیت انتخاب کانال ----------
               css = """
@@ -148,11 +144,7 @@ jobs:
                       --border-radius: 20px;
                       --box-shadow: 0 10px 25px rgba(0,0,0,0.05), 0 5px 10px rgba(0,0,0,0.03);
                   }
-                  * {
-                      margin: 0;
-                      padding: 0;
-                      box-sizing: border-box;
-                  }
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
                   body {
                       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                       background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
@@ -161,10 +153,7 @@ jobs:
                       padding: 2rem;
                       min-height: 100vh;
                   }
-                  .container {
-                      max-width: 900px;
-                      margin: 0 auto;
-                  }
+                  .container { max-width: 900px; margin: 0 auto; }
                   .header {
                       background: white;
                       border-radius: var(--border-radius);
@@ -174,9 +163,7 @@ jobs:
                       border-right: 8px solid var(--primary);
                       transition: transform 0.2s;
                   }
-                  .header:hover {
-                      transform: translateY(-3px);
-                  }
+                  .header:hover { transform: translateY(-3px); }
                   h1 {
                       color: var(--dark);
                       font-size: 1.8rem;
@@ -185,10 +172,7 @@ jobs:
                       align-items: center;
                       gap: 10px;
                   }
-                  h1::before {
-                      content: "📡";
-                      font-size: 2rem;
-                  }
+                  h1::before { content: "📡"; font-size: 2rem; }
                   .channel-selector {
                       margin-top: 1rem;
                       display: flex;
@@ -196,10 +180,7 @@ jobs:
                       gap: 1rem;
                       flex-wrap: wrap;
                   }
-                  .channel-selector label {
-                      font-weight: bold;
-                      color: var(--dark);
-                  }
+                  .channel-selector label { font-weight: bold; color: var(--dark); }
                   select {
                       padding: 0.6rem 1rem;
                       border-radius: 30px;
@@ -211,9 +192,7 @@ jobs:
                       transition: 0.2s;
                       font-family: inherit;
                   }
-                  select:hover {
-                      border-color: var(--primary);
-                  }
+                  select:hover { border-color: var(--primary); }
                   .badge {
                       display: inline-block;
                       background: var(--primary);
@@ -247,10 +226,7 @@ jobs:
                       align-items: center;
                       gap: 8px;
                   }
-                  .date::before {
-                      content: "🕒";
-                      font-size: 0.9rem;
-                  }
+                  .date::before { content: "🕒"; font-size: 0.9rem; }
                   .text {
                       color: var(--dark);
                       line-height: 1.6;
@@ -263,9 +239,7 @@ jobs:
                       text-decoration: none;
                       border-bottom: 1px dashed var(--primary);
                   }
-                  .text a:hover {
-                      color: var(--primary-dark);
-                  }
+                  .text a:hover { color: var(--primary-dark); }
                   .error-message {
                       background: #ffe0e0;
                       border-right: 5px solid #e74c3c;
@@ -290,18 +264,18 @@ jobs:
               </style>
               """
 
-              # تبدیل داده‌های کانال‌ها به JSON برای استفاده در جاوااسکریپت
+              # آماده‌سازی داده‌ها برای جاوااسکریپت
               channels_data = {}
               for ch, info in results.items():
                   if info['status'] == 'success':
-                      # messages list
                       channels_data[ch] = {'status': 'success', 'messages': info['data']}
                   else:
                       channels_data[ch] = {'status': 'error', 'error': info['data']}
 
               json_data = json.dumps(channels_data, ensure_ascii=False)
-
-              html_output = f"""<!DOCTYPE html>
+              # ساخت HTML با استفاده از format به جای f-string برای جلوگیری از تداخل {}
+              html_template = """
+              <!DOCTYPE html>
               <html lang="fa">
               <head>
                   <meta charset="UTF-8">
@@ -317,16 +291,14 @@ jobs:
                           <label for="channelSelect">انتخاب کانال:</label>
                           <select id="channelSelect">
                               <option value="">-- لطفاً یک کانال را انتخاب کنید --</option>
-                              {"".join(f'<option value="{html.escape(ch)}">{html.escape(ch)}</option>' for ch in channels_data.keys())}
+                              {options}
                           </select>
                       </div>
                       <div class="badge" id="messageCount"></div>
                   </div>
-                  <div id="messagesContainer" class="messages">
-                      <!-- پیام‌ها به صورت داینامیک در اینجا بارگذاری می‌شوند -->
-                  </div>
+                  <div id="messagesContainer" class="messages"></div>
                   <div class="footer">
-                      تولید شده توسط GitHub Actions • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                      تولید شده توسط GitHub Actions • {date}
                   </div>
               </div>
               <script>
@@ -342,7 +314,7 @@ jobs:
                       }}
                       const data = channelData[channelName];
                       if (data.status === 'error') {{
-                          container.innerHTML = `<div class="error-message">❌ ${{escapeHtml(data.error)}}</div>`;
+                          container.innerHTML = '<div class="error-message">❌ ' + escapeHtml(data.error) + '</div>';
                           countBadge.textContent = 'خطا در دریافت';
                           return;
                       }}
@@ -356,7 +328,6 @@ jobs:
                       let html = '';
                       for (const msg of messages) {{
                           let text = escapeHtml(msg.text).replace(/\\n/g, '<br>');
-                          // لینک‌سازی خودکار
                           text = text.replace(/(https?:\\/\\/[^\\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
                           html += `
                               <div class="message">
@@ -374,16 +345,11 @@ jobs:
                           if (m === '<') return '&lt;';
                           if (m === '>') return '&gt;';
                           return m;
-                      }}).replace(/[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]/g, function(c) {{
-                          return c;
                       }});
                   }}
 
                   const selectEl = document.getElementById('channelSelect');
-                  selectEl.addEventListener('change', (e) => {{
-                      renderMessages(e.target.value);
-                  }});
-                  // در صورت وجود کانال پیش‌فرض، اولین کانال را نمایش بده
+                  selectEl.addEventListener('change', (e) => renderMessages(e.target.value));
                   if (selectEl.options.length > 1) {{
                       selectEl.selectedIndex = 1;
                       renderMessages(selectEl.value);
@@ -393,9 +359,17 @@ jobs:
               </html>
               """
 
+              options_html = ''.join(f'<option value="{html.escape(ch)}">{html.escape(ch)}</option>' for ch in channels_data.keys())
+              final_html = html_template.format(
+                  css=css,
+                  options=options_html,
+                  date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                  json_data=json_data
+              )
+
               output_path = "telegram/channels_messages.html"
               with open(output_path, "w", encoding="utf-8") as f:
-                  f.write(html_output)
+                  f.write(final_html)
               print(f"✅ فایل HTML در {output_path} ذخیره شد.")
 
           if __name__ == "__main__":

@@ -34,7 +34,7 @@ jobs:
           CHANNELS: ${{ github.event.inputs.channels }}
           LIMIT: ${{ github.event.inputs.limit }}
         run: |
-          python - <<'EOF'
+          python - <<'EOL'
           import os, re, time, html, requests, json
           from bs4 import BeautifulSoup
           from datetime import datetime
@@ -88,7 +88,6 @@ jobs:
               return None
 
           def fetch_channel_messages(channel, limit):
-              """Returns (success, data) where data is list of messages or error string"""
               try:
                   channel_clean = clean_channel(channel)
                   print(f"🔄 در حال دریافت پیام‌های @{channel_clean} ...")
@@ -131,7 +130,7 @@ jobs:
                   success, data = fetch_channel_messages(ch, limit)
                   results[ch] = {'status': 'success' if success else 'error', 'data': data}
 
-              # ---------- تولید HTML با قابلیت انتخاب کانال ----------
+              # CSS (بدون تغییر)
               css = """
               <style>
                   :root {
@@ -264,7 +263,6 @@ jobs:
               </style>
               """
 
-              # آماده‌سازی داده‌ها برای جاوااسکریپت
               channels_data = {}
               for ch, info in results.items():
                   if info['status'] == 'success':
@@ -273,68 +271,41 @@ jobs:
                       channels_data[ch] = {'status': 'error', 'error': info['data']}
 
               json_data = json.dumps(channels_data, ensure_ascii=False)
-              # ساخت HTML با استفاده از format به جای f-string برای جلوگیری از تداخل {}
-              html_template = """
-              <!DOCTYPE html>
-              <html lang="fa">
-              <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-                  <title>نمایشگر پیام‌های تلگرام</title>
-                  {css}
-              </head>
-              <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>📢 پیام‌های کانال‌های تلگرام</h1>
-                      <div class="channel-selector">
-                          <label for="channelSelect">انتخاب کانال:</label>
-                          <select id="channelSelect">
-                              <option value="">-- لطفاً یک کانال را انتخاب کنید --</option>
-                              {options}
-                          </select>
-                      </div>
-                      <div class="badge" id="messageCount"></div>
-                  </div>
-                  <div id="messagesContainer" class="messages"></div>
-                  <div class="footer">
-                      تولید شده توسط GitHub Actions • {date}
-                  </div>
-              </div>
-              <script>
+
+              # جاوااسکریپت بدون هیچ ${{...}} یا backtick با متغیر
+              js_code = f"""
                   const channelData = {json_data};
 
                   function renderMessages(channelName) {{
                       const container = document.getElementById('messagesContainer');
                       const countBadge = document.getElementById('messageCount');
                       if (!channelName || !channelData[channelName]) {{
-                          container.innerHTML = '<div class="error-message">⚠️ لطفاً یک کانال معتبر انتخاب کنید.</div>';
+                          container.innerHTML = '<div class=\"error-message\">⚠️ لطفاً یک کانال معتبر انتخاب کنید.</div>';
                           countBadge.textContent = '';
                           return;
                       }}
                       const data = channelData[channelName];
                       if (data.status === 'error') {{
-                          container.innerHTML = '<div class="error-message">❌ ' + escapeHtml(data.error) + '</div>';
+                          container.innerHTML = '<div class=\"error-message\">❌ ' + escapeHtml(data.error) + '</div>';
                           countBadge.textContent = 'خطا در دریافت';
                           return;
                       }}
                       const messages = data.messages;
                       if (!messages.length) {{
-                          container.innerHTML = '<div class="error-message">⚠️ هیچ پیامی برای این کانال یافت نشد.</div>';
+                          container.innerHTML = '<div class=\"error-message\">⚠️ هیچ پیامی برای این کانال یافت نشد.</div>';
                           countBadge.textContent = '۰ پیام';
                           return;
                       }}
-                      countBadge.textContent = `📨 ${{messages.length}} پیام`;
+                      countBadge.textContent = '📨 ' + messages.length + ' پیام';
                       let html = '';
-                      for (const msg of messages) {{
+                      for (let i = 0; i < messages.length; i++) {{
+                          let msg = messages[i];
                           let text = escapeHtml(msg.text).replace(/\\n/g, '<br>');
-                          text = text.replace(/(https?:\\/\\/[^\\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-                          html += `
-                              <div class="message">
-                                  <div class="date">🕒 ${{escapeHtml(msg.date)}}</div>
-                                  <div class="text">${{text}}</div>
-                              </div>
-                          `;
+                          text = text.replace(/(https?:\\/\\/[^\\s]+)/g, '<a href=\"$1\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>');
+                          html += '<div class=\"message\">' +
+                                  '<div class=\"date\">🕒 ' + escapeHtml(msg.date) + '</div>' +
+                                  '<div class=\"text\">' + text + '</div>' +
+                                  '</div>';
                       }}
                       container.innerHTML = html;
                   }}
@@ -354,18 +325,41 @@ jobs:
                       selectEl.selectedIndex = 1;
                       renderMessages(selectEl.value);
                   }}
+              """
+
+              options_html = ''.join(f'<option value="{html.escape(ch)}">{html.escape(ch)}</option>' for ch in channels_data.keys())
+              final_html = f"""<!DOCTYPE html>
+              <html lang="fa">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+                  <title>نمایشگر پیام‌های تلگرام</title>
+                  {css}
+              </head>
+              <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>📢 پیام‌های کانال‌های تلگرام</h1>
+                      <div class="channel-selector">
+                          <label for="channelSelect">انتخاب کانال:</label>
+                          <select id="channelSelect">
+                              <option value="">-- لطفاً یک کانال را انتخاب کنید --</option>
+                              {options_html}
+                          </select>
+                      </div>
+                      <div class="badge" id="messageCount"></div>
+                  </div>
+                  <div id="messagesContainer" class="messages"></div>
+                  <div class="footer">
+                      تولید شده توسط GitHub Actions • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                  </div>
+              </div>
+              <script>
+              {js_code}
               </script>
               </body>
               </html>
               """
-
-              options_html = ''.join(f'<option value="{html.escape(ch)}">{html.escape(ch)}</option>' for ch in channels_data.keys())
-              final_html = html_template.format(
-                  css=css,
-                  options=options_html,
-                  date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                  json_data=json_data
-              )
 
               output_path = "telegram/channels_messages.html"
               with open(output_path, "w", encoding="utf-8") as f:
@@ -374,7 +368,7 @@ jobs:
 
           if __name__ == "__main__":
               main()
-          EOF
+          EOL
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
